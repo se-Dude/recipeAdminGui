@@ -1,4 +1,5 @@
 import json
+import sys
 import os
 import PySimpleGUI as sg
 import pymysql.cursors
@@ -8,7 +9,6 @@ from PIL import Image as img
 import pytesseract as PT  
 from pdf2image import convert_from_path as CFP
 
-wasHere = False
 
 
 def ErrorWindw(errorMsg: str):
@@ -36,7 +36,7 @@ def convertToBinaryData(filename):
         binaryData = file.read()
     return binaryData
 
-def settings():
+def defaultsettings():
     #read settings
     try :
         with open('settings.json', 'r') as openfile:
@@ -51,8 +51,8 @@ def settings():
             
             "HostnameDB": 'localhost',
             "PasswordDB": '',
-            "Delete PDF after DB-Insert": 'true',
-            
+            "DeletePDFafterDBInsert": 'true',
+            "pathToTesseract": r"C:\Users\dthur\Documents\Privat\rezeptverwaltung\OCR_Lib\tesseract.exe",
             
         }
     
@@ -74,8 +74,10 @@ def setSettings():
 
 
        
-        [sg.Text('HostnameDB:', size=(18, 1)), sg.InputText(key='Hostname')],
-        [sg.Text('PAsswortDB:', size=(18, 1)), sg.InputText(key='Password')],
+        [sg.Text('HostnameDB:', size=(21, 1)), sg.InputText(key='Hostname',default_text= settings["HostnameDB"])],
+        [sg.Text('PasswortDB:', size=(21, 1)), sg.InputText(key='Password')],
+        [sg.Text('Pfad zu Tesseract:', size=(21, 1)), sg.InputText(key='pathToTesseract',default_text= settings["pathToTesseract"])],
+        [sg.Text('Pdf Löschen nach Upload', size=(21,1)), sg.InputText(key='delPdf',default_text= settings["DeletePDFafterDBInsert"])],
         [sg.Button('OK',key='ok')]
     
       
@@ -90,8 +92,11 @@ def setSettings():
             break
 
          if event == 'ok':
-            settings["Hostname"] = values['Hostname']
+            
+            settings["HostnameDB"] = values['Hostname']
             settings["PasswordDB"] = values['Password']
+            settings["DeletePDFafterDBInsert"] = values['delPdf']
+            settings["pathToTesseract"] = values['pathToTesseract']
 
             settings = json.dumps(settings, indent=4)
 
@@ -149,7 +154,7 @@ def addLabel():
              mainWindow()
              break
              
-        if event == "Speichern":
+        if event == "Speichern" and not values['newLabel'] == '':
 
             sql = 'SELECT `label` FROM `labels` WHERE label = (%s)'
 
@@ -170,10 +175,11 @@ def addLabel():
                 break
 
             else:
-                ErrorWindw(errorMsg='das Angegebene Label ist bereits vorhanden!')
+                ErrorWindw(errorMsg='Das Angegebene Label ist ungültig oder bereits vorhanden!')
 
 def add():
     global connection
+    global settings
     layout = [     
                         
                     [sg.Text('Pfad zum PDF:',size=(50,1)),sg.FilesBrowse('Browse',key='path')],
@@ -194,7 +200,7 @@ def add():
              window.close()
              mainWindow()
              break
-        if event == "Rezept aufnehmen":
+        if event == "Rezept aufnehmen" and not values['path'] == '':
             window['Rezept aufnehmen'].update(disabled=True)
             prog = 10
             window['prog'].update(prog)
@@ -233,8 +239,7 @@ def add():
                 window['prog'].update(prog)
                 filename1 = "Page_no_" + str(K) + " .jpg"  
 
-                PT.pytesseract.tesseract_cmd = r'C:\Users\dthur\Documents\Privat\rezeptverwaltung\OCR_Lib\tesseract.exe'
-                        
+                PT.pytesseract.tesseract_cmd = settings['pathToTesseract']                        
                 custom_config = r'-l deu --psm 6'
                 text = str(((PT.image_to_string (img.open (filename1), config=custom_config))))
                 text = text.replace('-\n', '')     
@@ -338,7 +343,7 @@ def search():
     global connection
     listColumns = []
     
-    sql = 'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = (%s)'
+    sql = 'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = (%s) ORDER BY ORDINAL_POSITION ASC'
                 
     with connection.cursor() as cursor:
         cursor.execute(sql,'rezepte')
@@ -484,7 +489,7 @@ def showResultList(resultList,Toprow):
         if event == 'Table':
             data_selected = [resultList[row] for row in values[event]]
             
-            showPdf(data=data_selected[0][2],filename=('Retzept.pdf'))
+            showPdf(data=data_selected[0][5],filename=('Rezept.pdf'))
 
         if event == 'back':
              windowResults.close()
@@ -518,7 +523,7 @@ def mainWindow():
         event, values = window.read()
         if event in (sg.WINDOW_CLOSED, "Quit"):
              window.close()
-             exit()
+             sys.exit(0)
         elif event == "Rezept aufnehmen":
             window.close()
             add()
@@ -537,6 +542,6 @@ def mainWindow():
             break
 
 
-settings = settings()
+settings = defaultsettings()
 connection = connectDB()
 mainWindow()
