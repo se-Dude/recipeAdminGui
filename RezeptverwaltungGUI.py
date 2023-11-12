@@ -9,7 +9,10 @@ from PIL import Image as img
 import pytesseract as PT  
 from pdf2image import convert_from_path as CFP
 
-
+currentPath = os. getcwd()
+icon = currentPath + r'\ico.ico'
+print(icon)
+#Build exe: pyinstaller --onefile -i ico.ico -w RezeptverwaltungGUI.py
 
 def ErrorWindw(errorMsg: str):
 
@@ -19,7 +22,7 @@ def ErrorWindw(errorMsg: str):
         [sg.Quit()]
     ]
 
-    windowError = sg.Window('Fehler', layout)
+    windowError = sg.Window('Fehler', layout, icon=icon)
 
     while True:
         event, values = windowError.read()
@@ -49,9 +52,10 @@ def defaultsettings():
 
         defaultSettings = {
             
-            "HostnameDB": 'localhost',
+            "HostnameDB": '',
+            "UsernameDB": 'GUI',
             "PasswordDB": '',
-            "DeletePDFafterDBInsert": 'true',
+            "DeletePDFafterDBInsert": True,
             "pathToTesseract": r"C:\Users\dthur\Documents\Privat\rezeptverwaltung\OCR_Lib\tesseract.exe",
             
         }
@@ -75,15 +79,16 @@ def setSettings():
 
        
         [sg.Text('HostnameDB:', size=(21, 1)), sg.InputText(key='Hostname',default_text= settings["HostnameDB"])],
+        [sg.Text('UsernameDB:', size=(21, 1)), sg.InputText(key='Username',default_text= settings["UsernameDB"])],
         [sg.Text('PasswortDB:', size=(21, 1)), sg.InputText(key='Password')],
         [sg.Text('Pfad zu Tesseract:', size=(21, 1)), sg.InputText(key='pathToTesseract',default_text= settings["pathToTesseract"])],
-        [sg.Text('Pdf Löschen nach Upload', size=(21,1)), sg.InputText(key='delPdf',default_text= settings["DeletePDFafterDBInsert"])],
+        [sg.Checkbox('PDF nach dem lesen löschen',key='delPdf', default=settings["DeletePDFafterDBInsert"])],
         [sg.Button('OK',key='ok')]
     
       
     ]
 
-    windowSettings= sg.Window('Grundeinstellungen', layout, finalize=True)
+    windowSettings= sg.Window('Grundeinstellungen', layout, finalize=True, icon=icon)
 
     while True:
          event, values = windowSettings.read()
@@ -94,14 +99,15 @@ def setSettings():
          if event == 'ok':
             
             settings["HostnameDB"] = values['Hostname']
+            settings["UsernameDB"] = values['Username']
             settings["PasswordDB"] = values['Password']
             settings["DeletePDFafterDBInsert"] = values['delPdf']
             settings["pathToTesseract"] = values['pathToTesseract']
 
-            settings = json.dumps(settings, indent=4)
+            newSettings = json.dumps(settings, indent=4)
 
             with open("settings.json", "w") as outfile:
-                outfile.write(settings)
+                outfile.write(newSettings)
 
             windowSettings.close()
             mainWindow()
@@ -110,9 +116,9 @@ def connectDB():
 
     global settings
     try :
-        connection = pymysql.connect(host='localhost',
-                                        user='test',
-                                        password='test',
+        connection = pymysql.connect(host=settings['HostnameDB'],
+                                        user=settings['UsernameDB'],
+                                        password=settings['PasswordDB'],
                                         database='rezeptdb',
                                         charset='utf8mb4',
                                         cursorclass=pymysql.cursors.DictCursor)
@@ -131,7 +137,7 @@ def connectDB():
       
     ]
 
-    window= sg.Window('Fehler', layout, finalize=True)
+    window= sg.Window('Fehler', layout, finalize=True, icon=icon)
 
     while True:
          event, values = window.read()
@@ -145,7 +151,7 @@ def addLabel():
                     [sg.Button(f'Speichern')],
                     [sg.Quit()]
                     ]
-    window = sg.Window('Rezeptverwaltung').layout(layout)
+    window = sg.Window('Rezeptverwaltung',icon=icon).layout(layout)
     
     while True:
         event, values = window.read()
@@ -183,13 +189,13 @@ def add():
     layout = [     
                         
                     [sg.Text('Pfad zum PDF:',size=(50,1)),sg.FilesBrowse('Browse',key='path')],
-                    [sg.Checkbox('PDF nach dem lesen löschen',key='delPdf')],
+                    [sg.Checkbox('PDF nach dem lesen löschen',key='delPdf', default=settings["DeletePDFafterDBInsert"])],
                     [sg.Button(f'Rezept aufnehmen')],
                     [sg.Text('Fortschritt:',size=(50,1))],
                     [sg.ProgressBar(100,orientation='h',size=(20,20), key='prog')],
                     [sg.Quit()]
                     ]
-    window = sg.Window('Rezeptverwaltung').layout(layout)
+    window = sg.Window('Rezeptverwaltung', icon=icon).layout(layout)
 
 
     
@@ -208,6 +214,31 @@ def add():
             pathToPDF = values['path']
             delPdf = values['delPdf']
             reader = PdfReader(pathToPDF)
+
+            rec = False
+            defaultName = ""
+            pathToPDFBack = pathToPDF[::-1]
+
+
+            for element in pathToPDFBack:
+                if rec == True and element == "/":
+                    rec = False
+                    break
+
+                if rec == True:
+                    defaultName = defaultName + element
+
+                if rec == False and element == ".":
+                    rec = True
+                
+                
+
+                
+                
+                
+            defaultName = defaultName[::-1]
+            
+            
 
             for i in range(0,len(reader.pages)):
                         page = reader.pages[i]
@@ -264,21 +295,21 @@ def add():
                 window['prog'].update(prog)
                 window.close()
 
-                sql = "SELECT label FROM labels"
+                sql = "SELECT label FROM labels ORDER BY labels.id desc"
                 with connection.cursor() as cursor:
                     cursor.execute(sql)
                     labels = cursor.fetchall()
                 
 
                 layout = [     
-                    [sg.Text('Rezepttitel:'),sg.InputText(key='title')],
+                    [sg.Text('Rezepttitel:'),sg.InputText(key='title',default_text=defaultName)],
                     [sg.Button(f'OK')],
                     [sg.Quit()]                    
                     ]
                 for item in labels:
-                    layout.insert(1,[sg.Checkbox(item['label'],key=item['label'])])
+                    layout.insert(3,[sg.Checkbox(item['label'],key=item['label'])])
 
-                window = sg.Window('Rezept aufnehmen').layout(layout)
+                window = sg.Window('Rezept aufnehmen', icon=icon).layout([[sg.Column(layout, size=(300,300), scrollable=True)]])
                     
                 while True:
                     event, values = window.read()
@@ -354,7 +385,7 @@ def search():
             lenght = len(listColumns)
 
 
-    sql = "SELECT label FROM labels"
+    sql = "SELECT label FROM labels ORDER BY labels.id desc"
 
     with connection.cursor() as cursor:
         cursor.execute(sql)
@@ -370,9 +401,9 @@ def search():
         ]
     
     for item in labels:
-        layout.insert(3,[sg.Checkbox(item['label'],key=item['label'])])
+        layout.insert(5,[sg.Checkbox(item['label'],key=item['label'])])
 
-    window = sg.Window('Rezept suchen').layout(layout)
+    window = sg.Window('Rezept suchen', icon=icon).layout([[sg.Column(layout, size=(300,300), scrollable=True)]])
 
     while True:
         event, values = window.read()
@@ -427,7 +458,7 @@ def search():
 
 
 
-                sql = "SELECT id, timestamp, titel, rezept, label, pdf FROM rezepte WHERE " + sqlVar + logic + sqlLabel + "ORDER BY rezepte.timestamp DESC LIMIT 100"
+                sql = "SELECT id, timestamp, titel, rezept, label, pdf FROM rezepte WHERE " + sqlVar + logic + sqlLabel + "ORDER BY rezepte.timestamp DESC LIMIT 10000"
 
                 with connection.cursor() as cursor:
                     cursor.execute(sql)
@@ -476,11 +507,11 @@ def showResultList(resultList,Toprow):
     layout = [
          
          [sg.Text('Ergebnisse:')],
-         [sg.Table(values=resultList,display_row_numbers=False,headings=Toprow,key='Table', enable_events=True,auto_size_columns=True)],
+         [sg.Table(values=resultList,display_row_numbers=False,headings=Toprow,key='Table', enable_events=True,auto_size_columns=True,visible_column_map=[True,False,True,False,True,False],alternating_row_color='RoyalBlue4')],
          [sg.Button('zurück', key='back')]
      ]
 
-    windowResults = sg.Window('Suche').layout(layout)
+    windowResults = sg.Window('Suche', icon=icon).layout(layout)
 
     while True:
 
@@ -516,7 +547,7 @@ def mainWindow():
                  [sg.Quit()]
                  ]
 
-    window = sg.Window('Rezeptverwaltung').layout(layout)
+    window = sg.Window('Rezeptverwaltung', icon=icon).layout(layout)
 
 
     while True:
