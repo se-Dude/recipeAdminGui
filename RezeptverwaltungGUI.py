@@ -145,6 +145,17 @@ def connectDB():
             window.close()
             break
 
+def getLabels():
+    global connection
+
+    sql = "SELECT label FROM labels ORDER BY labels.id desc"
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        labels = cursor.fetchall()
+
+    return labels
+
 def addLabel():
     layout = [     
                     [sg.Text('Label:'),sg.InputText(key='newLabel')],
@@ -295,10 +306,7 @@ def add():
                 window['prog'].update(prog)
                 window.close()
 
-                sql = "SELECT label FROM labels ORDER BY labels.id desc"
-                with connection.cursor() as cursor:
-                    cursor.execute(sql)
-                    labels = cursor.fetchall()
+                labels = getLabels()
                 
 
                 layout = [     
@@ -354,6 +362,7 @@ def add():
 
                                 cursor.execute(sql,(title,now,text,listlabels,file))
                                 connection.commit()
+
                             if delPdf:
 
                                 os.remove(pathToPDF)
@@ -384,12 +393,7 @@ def search():
             listColumns.insert((lenght),item['COLUMN_NAME'])
             lenght = len(listColumns)
 
-
-    sql = "SELECT label FROM labels ORDER BY labels.id desc"
-
-    with connection.cursor() as cursor:
-        cursor.execute(sql)
-        labels = cursor.fetchall()
+    labels = getLabels()
                 
 
     layout = [
@@ -397,11 +401,12 @@ def search():
         [sg.Text('Suchbegriff:'),sg.InputText(key='keyword')],
         [sg.Combo(['und','oder'],key='logic')],
         [sg.Button(f'OK')],
-        [sg.Quit()]                    
+        [sg.Quit()],
+        [sg.Text('Verknüpfungslogik Labels'),sg.Combo(['und','oder'],key='logic_label',default_value='oder')]
         ]
     
     for item in labels:
-        layout.insert(5,[sg.Checkbox(item['label'],key=item['label'])])
+        layout.insert(6,[sg.Checkbox(item['label'],key=item['label'])])
 
     window = sg.Window('Rezept suchen', icon=icon).layout([[sg.Column(layout, size=(300,300), scrollable=True)]])
 
@@ -413,6 +418,11 @@ def search():
              break
         if event == 'OK':
             listlabels = []
+
+            if values['logic_label'] == 'und':
+                logic_label='AND '
+            elif values['logic_label'] == 'oder':
+                logic_label='OR '
             
             for item in labels:
                 if values[item['label']]:
@@ -434,7 +444,7 @@ def search():
 
             else:
                 logic = ''
-                ErrorWindw(errorMsg='Ungültige logische Verjnüpfung')
+                ErrorWindw(errorMsg='Ungültige logische Verknüpfung')
 
             if logic == 'AND ' or logic == 'OR ' or logic == '':
 
@@ -445,7 +455,7 @@ def search():
                 for item in listlabels:
                     sqlLabel = sqlLabel + "rezepte.label LIKE '%" + item + "%' "
                     if counter < len(listlabels):
-                        sqlLabel = sqlLabel + 'AND '
+                        sqlLabel = sqlLabel + logic_label
 
                     counter = counter + 1
 
@@ -520,7 +530,7 @@ def showResultList(resultList,Toprow):
         if event == 'Table':
             data_selected = [resultList[row] for row in values[event]]
             
-            showPdf(data=data_selected[0][5],filename=('Rezept.pdf'))
+            showEdit(data=data_selected)
 
         if event == 'back':
              windowResults.close()
@@ -530,6 +540,106 @@ def showResultList(resultList,Toprow):
         if event == sg.WIN_CLOSED:
            break
 
+
+def showEdit(data):
+
+    layout = [     
+                       
+                 [sg.Button(f'Öffnen', size=(11,3)), sg.Button(f'Bearbeiten', size=(11,3))],
+                 [sg.Quit()]
+                 ]
+
+    windowShowEdit = sg.Window('Suche', icon=icon).layout(layout)
+
+    while True:
+        event, values = windowShowEdit.read()
+
+
+        if event in (sg.WINDOW_CLOSED, "Quit"):
+             windowShowEdit.close()
+             break
+        
+        if event == 'Öffnen':
+            windowShowEdit.close()
+            showPdf(data[0][5],filename=('Rezept.pdf'))
+
+        if event == 'Bearbeiten':
+            windowShowEdit.close()
+            edit(data)
+
+
+
+def edit(data):
+
+    global connection
+
+    labels = getLabels()
+
+    layout = [
+        [sg.Text('Titel:'),sg.InputText(key='title', default_text = data[0][2])],     
+        [sg.Button('zurück', key='Quit'), sg.Button('Rezept Löschen', key='delete'), sg.Button('Ok', key='ok')],
+        [sg.Text('Labels:')]
+        ]
+        
+    for item in labels:
+        
+        if str(data[0][4]).find(item['label']) != -1:
+            default = True
+
+        else:
+            default = False
+         
+
+        layout.insert(3,[sg.Checkbox(item['label'],key=item['label'],default=default)])
+
+    windowEdit = sg.Window('Bearbeiten', icon=icon).layout([[sg.Column(layout, size=(300,300), scrollable=True)]])
+
+    while True:
+        event, values = windowEdit.read()
+
+
+        if event in (sg.WINDOW_CLOSED, "Quit"):
+             windowEdit.close()
+             break
+        
+        if event == 'delete':
+
+            sql = 'DELETE FROM rezepte WHERE id = %s;'
+
+            try:
+                with connection.cursor() as cursor:
+
+                    cursor.execute(sql,(data[0][0]))
+                    connection.commit()
+            except Exception as error:
+
+                ErrorWindw(error)
+
+        if event == 'ok':
+
+            listlabels = ''
+
+            for item in labels:
+                                
+                if values[item['label']]:
+                    listlabels = listlabels + item['label'] + ','
+
+            now = datetime.utcnow()
+
+
+            sql = 'UPDATE `rezepte` SET `titel` = %s,`timestamp` = %s,`label` = %s WHERE `id` = %s'
+           
+            try:
+                with connection.cursor() as cursor:
+
+                    cursor.execute(sql,(values['title'],now,listlabels,data[0][0]))
+                    connection.commit()
+                windowEdit.close()
+                
+            except Exception as error:
+
+                ErrorWindw(error)
+        
 
 def showPdf(data, filename):
     with open(filename, 'wb') as f:
